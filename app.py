@@ -19,12 +19,12 @@ except Exception as e:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Default to Chef tab on first load
+    return render_template('index.html', active_tab='chef')
 
 @app.route('/generate-recipe', methods=['POST'])
 def generate_recipe():
-    # ... (Keep existing Recipe Logic same as before) ...
-    if not client: return render_template('index.html', recipe="Error: Client not connected")
+    if not client: return render_template('index.html', recipe="Error: Client not connected", active_tab='chef')
     
     ingredients = request.form.get('ingredients')
     prompt = f"""
@@ -35,62 +35,49 @@ def generate_recipe():
     try:
         response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=prompt)
         clean_html = response.text.replace("```html", "").replace("```", "")
-        return render_template('index.html', recipe=clean_html)
+        # STAY ON CHEF TAB
+        return render_template('index.html', recipe=clean_html, active_tab='chef')
     except Exception as e:
-        return render_template('index.html', recipe=f"Error: {str(e)}")
+        return render_template('index.html', recipe=f"Error: {str(e)}", active_tab='chef')
 
 
-# --- NEW UPDATED MATH LOGIC ---
 @app.route('/calculate-macros', methods=['POST'])
 def calculate_macros():
+    # FORCE MATH TAB TO BE ACTIVE
     if not client:
-        return render_template('index.html', math_result="<p class='text-danger'>Error: AI Client not connected.</p>")
+        return render_template('index.html', math_result="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='math')
 
     try:
-        # 1. Get Lists from Form
         names = request.form.getlist('names[]')
         weights = request.form.getlist('weights[]')
-        final_weight = float(request.form.get('final_weight'))
+        final_weight_str = request.form.get('final_weight')
 
-        # Combine into a string for the AI to read
-        # Format: "Chicken: 500g, Rice: 200g"
+        if not final_weight_str:
+            return render_template('index.html', math_result="<div class='alert alert-danger'>Please enter a final weight.</div>", active_tab='math')
+            
+        final_weight = float(final_weight_str)
+
         ingredient_list_str = ", ".join([f"{n}: {w}g" for n, w in zip(names, weights) if n and w])
 
-        # 2. Ask Gemini to do the Calorie Lookup (The "Database")
         prompt = f"""
         I have these raw ingredients: {ingredient_list_str}.
-        
         Task: Estimate the total calories for each specific weight provided.
-        Return ONLY a JSON object. No markdown. No intro text.
-        
-        Format:
-        {{
-            "items": [
-                {{ "name": "Chicken", "cals": 825 }},
-                {{ "name": "Rice", "cals": 700 }}
-            ],
-            "total_cals": 1525
-        }}
+        Return ONLY a JSON object. No markdown.
+        Format: {{ "items": [ {{ "name": "Chicken", "cals": 825 }} ], "total_cals": 1525 }}
         """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash-exp", 
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json" 
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         
-        # 3. Parse AI Response
         data = json.loads(response.text)
         total_raw_cals = data['total_cals']
         items = data['items']
 
-        # 4. Do The Rigid Math (Python side)
-        # Density = Total Calories / Final Cooked Weight
-        density = total_raw_cals / final_weight
+        density = total_raw_cals / final_weight if final_weight > 0 else 0
         
-        # 5. Generate Output HTML
         rows_html = ""
         for item in items:
             rows_html += f"<tr><td>{item['name']}</td><td>{item['cals']}</td></tr>"
@@ -103,13 +90,11 @@ def calculate_macros():
                 <tbody>{rows_html}</tbody>
                 <tfoot class="border-top"><tr><th>Total Raw</th><th>{total_raw_cals}</th></tr></tfoot>
             </table>
-            
             <hr>
             <div class="text-center">
                 <h2 style="color: #2A9D8F;">{density:.3f}</h2>
                 <p class="text-muted">Calories per Gram</p>
             </div>
-            
             <div class="bg-white p-3 rounded border">
                 <strong>Serving Cheat Sheet:</strong>
                 <ul class="mb-0">
@@ -121,10 +106,11 @@ def calculate_macros():
         </div>
         """
         
-        return render_template('index.html', math_result=result_html)
+        # STAY ON MATH TAB
+        return render_template('index.html', math_result=result_html, active_tab='math')
 
     except Exception as e:
-        return render_template('index.html', math_result=f"<div class='alert alert-danger'>Error: {str(e)}</div>")
+        return render_template('index.html', math_result=f"<div class='alert alert-danger'>Error: {str(e)}</div>", active_tab='math')
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

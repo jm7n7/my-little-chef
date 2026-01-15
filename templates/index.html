@@ -17,6 +17,9 @@
         h1, h2, h3 { font-family: 'Lobster', cursive; color: var(--tomato-red); }
         .card { border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border-radius: 20px; background: white; overflow: hidden; }
         .nav-pills .nav-link.active { background-color: var(--tomato-red); color: white; }
+        /* Override Math tab active color to green */
+        .nav-pills .nav-link#pills-math-tab.active { background-color: var(--zucchini-green); }
+        
         .nav-pills .nav-link { color: var(--eggplant-dark); font-weight: bold; margin: 0 5px; }
         
         .btn-add { background-color: var(--eggplant-dark); color: white; border-radius: 50%; width: 35px; height: 35px; font-weight: bold; padding: 0; line-height: 35px; border: none; }
@@ -39,16 +42,16 @@
 
     <ul class="nav nav-pills mb-4 justify-content-center" id="pills-tab" role="tablist">
         <li class="nav-item">
-            <button class="nav-link active" id="pills-chef-tab" data-bs-toggle="pill" data-bs-target="#pills-chef" type="button">👨‍🍳 The Chef</button>
+            <button class="nav-link {{ 'active' if active_tab == 'chef' else '' }}" id="pills-chef-tab" data-bs-toggle="pill" data-bs-target="#pills-chef" type="button">👨‍🍳 The Chef</button>
         </li>
         <li class="nav-item">
-            <button class="nav-link" id="pills-math-tab" data-bs-toggle="pill" data-bs-target="#pills-math" type="button">📊 The Math</button>
+            <button class="nav-link {{ 'active' if active_tab == 'math' else '' }}" id="pills-math-tab" data-bs-toggle="pill" data-bs-target="#pills-math" type="button">📊 The Math</button>
         </li>
     </ul>
 
     <div class="tab-content" id="pills-tabContent">
         
-        <div class="tab-pane fade show active" id="pills-chef">
+        <div class="tab-pane fade {{ 'show active' if active_tab == 'chef' else '' }}" id="pills-chef">
             <div class="card p-5">
                 <h3 class="mb-4">What is in the pantry?</h3>
                 <form action="/generate-recipe" method="post">
@@ -59,7 +62,7 @@
             </div>
         </div>
 
-        <div class="tab-pane fade" id="pills-math">
+        <div class="tab-pane fade {{ 'show active' if active_tab == 'math' else '' }}" id="pills-math">
             <div class="card p-5">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h3 style="color: var(--zucchini-green);">Ingredient Tracker</h3>
