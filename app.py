@@ -10,46 +10,73 @@ from google.genai import types
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
+# PROJECT ID is required for Vertex AI (ADC) mode
 PROJECT_ID = "macro-chef-app"
 LOCATION = "us-central1"
 
-# Email Configuration (We will set these in Cloud Run later)
+# Email Configuration (Set these in Cloud Run Variables later)
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL')
 SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD')
 
+# Initialize the Client using Vertex AI (Project Credentials)
 try:
-    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-    print(f"✅ Google Gen AI Client Connected")
+    client = genai.Client(
+        vertexai=True, 
+        project=PROJECT_ID, 
+        location=LOCATION
+    )
+    print(f"✅ Google Gen AI Client Connected (Vertex AI Mode)")
 except Exception as e:
     print(f"⚠️ Client Init Error: {e}")
     client = None
 
 @app.route('/')
 def index():
+    # Defaults to the Chef tab
     return render_template('index.html', active_tab='chef')
 
+# --- TAB 1: AI CHEF LOGIC ---
 @app.route('/generate-recipe', methods=['POST'])
 def generate_recipe():
-    if not client: return render_template('index.html', recipe="Error: Client not connected", active_tab='chef')
-    
-    ingredients = request.form.get('ingredients')
-    prompt = f"""
-    You are a helpful nutrition chef. User ingredients: {ingredients}.
-    Create one creative recipe formatted as clean HTML (using Bootstrap classes).
-    Structure: <h3>Name, <ul> Ingredients, <ol> Steps.
-    """
-    try:
-        response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=prompt)
-        clean_html = response.text.replace("```html", "").replace("```", "")
-        return render_template('index.html', recipe=clean_html, active_tab='chef')
-    except Exception as e:
-        return render_template('index.html', recipe=f"Error: {str(e)}", active_tab='chef')
+    if not client: 
+        return render_template('index.html', recipe="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='chef')
 
-# --- NEW EMAIL ROUTE ---
+    ingredients = request.form.get('ingredients')
+    
+    prompt = f"""
+    You are a helpful nutrition chef. The user has these ingredients: {ingredients}.
+    
+    Create one creative recipe using these ingredients.
+    Format your response as a clean HTML <div> (do not use markdown ```html tags, just the raw html).
+    Use Bootstrap classes where possible (e.g., <h5 class="text-primary">).
+    
+    Structure:
+    1. <h3> Creative Recipe Name
+    2. <ul> Ingredient list (mark what might be missing)
+    3. <ol> Simple step-by-step instructions
+    4. <small> Estimated protein/carb balance
+    """
+    
+    try:
+        # Using 2.0 Flash for speed and creativity
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        
+        # Clean up any markdown formatting if the model adds it
+        clean_html = response.text.replace("```html", "").replace("```", "")
+        
+        return render_template('index.html', recipe=clean_html, active_tab='chef')
+        
+    except Exception as e:
+        return render_template('index.html', recipe=f"<p class='text-danger'>AI Error: {str(e)}</p>", active_tab='chef')
+
+# --- TAB 1 EXTENSION: EMAIL LOGIC ---
 @app.route('/email-recipe', methods=['POST'])
 def email_recipe():
     recipient = request.form.get('user_email')
-    recipe_content = request.form.get('recipe_content') # We get the HTML from a hidden field
+    recipe_content = request.form.get('recipe_content') # Retreive HTML from hidden field
     
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         return render_template('index.html', recipe=recipe_content, email_status="⚠️ Server Error: Email credentials not configured.", active_tab='chef')
@@ -62,7 +89,6 @@ def email_recipe():
         msg['Subject'] = "🍽️ Your Recipe from Chez Macro Chef"
 
         # Attach the HTML body
-        # We wrap it in a div to make it look nice in the email client
         email_body = f"""
         <html>
             <body>
@@ -89,44 +115,65 @@ def email_recipe():
     except Exception as e:
         return render_template('index.html', recipe=recipe_content, email_status=f"❌ Failed to send: {str(e)}", active_tab='chef')
 
-
+# --- TAB 2: MACRO MATH LOGIC ---
 @app.route('/calculate-macros', methods=['POST'])
 def calculate_macros():
-    # ... (Keep your existing Math logic EXACTLY as it was in the previous step) ...
-    # just abbreviated here for space, paste the logic from the previous turn
-    if not client: return render_template('index.html', math_result="Error: Client not connected", active_tab='math')
-    
+    # Force Math tab to stay active
+    if not client:
+        return render_template('index.html', math_result="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='math')
+
     try:
+        # 1. Get Lists from Form
         names = request.form.getlist('names[]')
         weights = request.form.getlist('weights[]')
         final_weight_str = request.form.get('final_weight')
-
+        
         if not final_weight_str:
             return render_template('index.html', math_result="<div class='alert alert-danger'>Please enter a final weight.</div>", active_tab='math')
-        
+            
         final_weight = float(final_weight_str)
+
+        # Combine into a string for the AI to read
         ingredient_list_str = ", ".join([f"{n}: {w}g" for n, w in zip(names, weights) if n and w])
 
+        # 2. Ask Gemini to do the Calorie Lookup (The "Database")
         prompt = f"""
         I have these raw ingredients: {ingredient_list_str}.
+        
         Task: Estimate the total calories for each specific weight provided.
-        Return ONLY a JSON object. No markdown.
-        Format: {{ "items": [ {{ "name": "Chicken", "cals": 825 }} ], "total_cals": 1525 }}
+        Return ONLY a JSON object. No markdown. No intro text.
+        
+        Format:
+        {{
+            "items": [
+                {{ "name": "Chicken", "cals": 825 }},
+                {{ "name": "Rice", "cals": 700 }}
+            ],
+            "total_cals": 1525
+        }}
         """
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp", 
+            model="gemini-2.5-flash", 
             contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json")
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json" 
+            )
         )
         
+        # 3. Parse AI Response
         data = json.loads(response.text)
         total_raw_cals = data['total_cals']
         items = data['items']
+
+        # 4. Do The Rigid Math (Python side)
+        # Avoid division by zero
         density = total_raw_cals / final_weight if final_weight > 0 else 0
         
+        # 5. Generate Output HTML
         rows_html = ""
-        for item in items: rows_html += f"<tr><td>{item['name']}</td><td>{item['cals']}</td></tr>"
+        for item in items:
+            rows_html += f"<tr><td>{item['name']}</td><td>{item['cals']}</td></tr>"
 
         result_html = f"""
         <div class="alert alert-success">
@@ -136,8 +183,13 @@ def calculate_macros():
                 <tbody>{rows_html}</tbody>
                 <tfoot class="border-top"><tr><th>Total Raw</th><th>{total_raw_cals}</th></tr></tfoot>
             </table>
+            
             <hr>
-            <div class="text-center"><h2 style="color: #2A9D8F;">{density:.3f}</h2><p class="text-muted">Calories per Gram</p></div>
+            <div class="text-center">
+                <h2 style="color: #2A9D8F;">{density:.3f}</h2>
+                <p class="text-muted">Calories per Gram</p>
+            </div>
+            
             <div class="bg-white p-3 rounded border">
                 <strong>Serving Cheat Sheet:</strong>
                 <ul class="mb-0">
@@ -148,10 +200,11 @@ def calculate_macros():
             </div>
         </div>
         """
+        
         return render_template('index.html', math_result=result_html, active_tab='math')
 
     except Exception as e:
-        return render_template('index.html', math_result=f"Error: {str(e)}", active_tab='math')
+        return render_template('index.html', math_result=f"<div class='alert alert-danger'>Error: {str(e)}</div>", active_tab='math')
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
