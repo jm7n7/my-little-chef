@@ -6,6 +6,8 @@ from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
+from typing import List
 
 app = Flask(__name__)
 
@@ -29,6 +31,15 @@ try:
 except Exception as e:
     print(f"⚠️ Client Init Error: {e}")
     client = None
+
+# --- PYDANTIC MODELS FOR STRUCTURED OUTPUT ---
+class IngredientItem(BaseModel):
+    name: str = Field(description="The name of the ingredient")
+    cals: float = Field(description="The estimated calories for this ingredient at the specified weight")
+
+class MacroCalculationResponse(BaseModel):
+    items: List[IngredientItem] = Field(description="List of ingredients with their calorie estimates")
+    total_cals: float = Field(description="Total calories across all ingredients")
 
 @app.route('/')
 def index():
@@ -143,24 +154,16 @@ def calculate_macros():
         Task: Use the Internet to estimate the total calories for each specific weight provided.
         Typically, you search for how many calories are in the raw food per 100 grams.
         You take the user provided weight, and multiply that with the amount of calories per 100 grams, then divide by 100.
-        This forumula gives you the amount of calories of that ingredient for the user.
-        Return ONLY a JSON object. No markdown. No intro text.
-        
-        Format:
-        {{
-            "items": [
-                {{ "name": "Chicken", "cals": 825 }},
-                {{ "name": "Rice", "cals": 700 }}
-            ],
-            "total_cals": 1525
-        }}
+        This formula gives you the amount of calories of that ingredient for the user.
         """
 
+        # Use Pydantic model for structured output - more robust than JSON parsing
         response = client.models.generate_content(
             model="gemini-2.5-flash", 
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
+                response_schema=MacroCalculationResponse,
                 tools=[types.Tool(
                     google_search=types.GoogleSearch()
                     )
@@ -168,10 +171,24 @@ def calculate_macros():
             )
         )
         
-        # 3. Parse AI Response
-        data = json.loads(response.text)
-        total_raw_cals = data['total_cals']
-        items = data['items']
+        # 3. Parse AI Response using Pydantic - .parsed returns validated Pydantic model
+        if not hasattr(response, 'parsed') or response.parsed is None:
+            # Fallback: try to parse manually if .parsed is not available
+            if not response.text or response.text.strip() == "":
+                raise ValueError("AI returned an empty response. Please try again.")
+            try:
+                response_data = json.loads(response.text)
+                validated_data = MacroCalculationResponse(**response_data)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"AI response was not valid JSON: {str(e)}. Response: {response.text[:200]}")
+            except Exception as e:
+                raise ValueError(f"Failed to validate AI response: {str(e)}. Response: {response.text[:200]}")
+        else:
+            # Use the parsed Pydantic model directly
+            validated_data = response.parsed
+        
+        total_raw_cals = validated_data.total_cals
+        items = validated_data.items
 
         # 4. Do The Rigid Math (Python side)
         # Avoid division by zero
@@ -180,7 +197,7 @@ def calculate_macros():
         # 5. Generate Output HTML
         rows_html = ""
         for item in items:
-            rows_html += f"<tr><td>{item['name']}</td><td>{item['cals']}</td></tr>"
+            rows_html += f"<tr><td>{item.name}</td><td>{int(item.cals)}</td></tr>"
 
         result_html = f"""
         <div class="alert alert-success">
