@@ -162,12 +162,12 @@ def calculate_macros():
             model="gemini-2.5-flash", 
             contents=prompt,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=MacroCalculationResponse,
                 tools=[types.Tool(
                     google_search=types.GoogleSearch()
                     )
-                ]
+                ],
+                response_mime_type="application/json",
+                response_schema=MacroCalculationResponse,
             )
         )
         
