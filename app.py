@@ -140,7 +140,10 @@ def calculate_macros():
         prompt = f"""
         I have these raw ingredients: {ingredient_list_str}.
         
-        Task: Estimate the total calories for each specific weight provided.
+        Task: Use the Internet to estimate the total calories for each specific weight provided.
+        Typically, you search for how many calories are in the raw food per 100 grams.
+        You take the user provided weight, and multiply that with the amount of calories per 100 grams, then divide by 100.
+        This forumula gives you the amount of calories of that ingredient for the user.
         Return ONLY a JSON object. No markdown. No intro text.
         
         Format:
@@ -157,7 +160,11 @@ def calculate_macros():
             model="gemini-2.5-flash", 
             contents=prompt,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json" 
+                response_mime_type="application/json",
+                tools=[types.Tool(
+                    google_search=types.GoogleSearch()
+                    )
+                ]
             )
         )
         
