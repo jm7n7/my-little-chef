@@ -51,7 +51,7 @@ def generate_recipe():
     try:
         # SYNTAX UPDATE: The new SDK uses client.models.generate_content
         response = client.models.generate_content(
-            model="gemini-1.5-flash",  # Switched to 1.5-flash (Standard)
+            model="gemini-2.5-flash",
             contents=prompt
         )
         
