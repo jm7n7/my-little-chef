@@ -1,0 +1,26 @@
+steps:
+  # Step 1: Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/macro-chef-app', '.']
+
+  # Step 2: Push the image to Google Container Registry (Artifact Registry)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/macro-chef-app']
+
+  # Step 3: Deploy container to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'macro-chef-app'  # This will be the name of your service
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/macro-chef-app'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated' # Makes the web app public (so you can see it)
+
+images:
+  - 'gcr.io/$PROJECT_ID/macro-chef-app'
