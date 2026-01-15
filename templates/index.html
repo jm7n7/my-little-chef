@@ -7,36 +7,130 @@
     
     <style>
         :root {
+            /* The Ratatouille Palette */
             --tomato-red: #E63946;
             --cream-bg: #FFFBF0;
             --zucchini-green: #2A9D8F;
             --eggplant-dark: #1D3557;
             --crust-gold: #F4A261;
         }
-        body { background-color: var(--cream-bg); font-family: 'Lato', sans-serif; color: #2c3e50; padding: 40px 0; }
+
+        body { 
+            background-color: var(--cream-bg); 
+            font-family: 'Lato', sans-serif;
+            color: #2c3e50;
+            padding-top: 40px;
+            padding-bottom: 40px;
+        }
+
+        /* The Bistro Title */
         h1, h2, h3 { font-family: 'Lobster', cursive; color: var(--tomato-red); }
-        .card { border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border-radius: 20px; background: white; overflow: hidden; }
-        .nav-pills .nav-link.active { background-color: var(--tomato-red); color: white; }
+        
+        .main-container {
+            max-width: 800px;
+            margin: auto;
+        }
+
+        /* Card Styling - Like a Menu */
+        .card { 
+            border: none; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+            border-radius: 20px; 
+            background: white;
+            overflow: hidden;
+        }
+
+        /* Custom Tabs */
+        .nav-pills .nav-link { 
+            color: var(--eggplant-dark);
+            font-weight: bold;
+            border-radius: 10px;
+            padding: 10px 20px;
+            margin: 0 5px;
+        }
+        
+        /* Active State Logic */
+        .nav-pills .nav-link.active { 
+            background-color: var(--tomato-red); 
+            color: white; 
+            box-shadow: 0 4px 6px rgba(230, 57, 70, 0.3);
+        }
         /* Override Math tab active color to green */
         .nav-pills .nav-link#pills-math-tab.active { background-color: var(--zucchini-green); }
-        
-        .nav-pills .nav-link { color: var(--eggplant-dark); font-weight: bold; margin: 0 5px; }
-        
-        .btn-add { background-color: var(--eggplant-dark); color: white; border-radius: 50%; width: 35px; height: 35px; font-weight: bold; padding: 0; line-height: 35px; border: none; }
-        .btn-add:hover { background-color: #34495e; color: white; }
-        
-        .btn-math { background-color: var(--zucchini-green); color: white; font-weight: bold; padding: 12px; border-radius: 10px; border: none; width: 100%; }
+
+        /* Buttons */
+        .btn-chef {
+            background-color: var(--tomato-red);
+            border: none;
+            color: white;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 10px;
+            transition: transform 0.1s;
+        }
+        .btn-chef:hover { background-color: #d62828; color: white; transform: scale(1.02); }
+
+        .btn-math {
+            background-color: var(--zucchini-green);
+            border: none;
+            color: white;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 10px;
+            width: 100%;
+        }
         .btn-math:hover { background-color: #21867a; color: white; }
-        
-        .internal-badge { background-color: var(--eggplant-dark); color: white; font-size: 0.8em; padding: 5px 12px; border-radius: 50px; opacity: 0.8; letter-spacing: 1px; }
+
+        .btn-add { 
+            background-color: var(--eggplant-dark); 
+            color: white; 
+            border-radius: 50%; 
+            width: 35px; height: 35px; 
+            font-weight: bold; padding: 0; 
+            line-height: 35px; border: none; 
+        }
+        .btn-add:hover { background-color: #34495e; color: white; }
+
+        /* Recipe Result Area */
+        .recipe-paper {
+            background-color: #fff;
+            border: 2px dashed var(--crust-gold);
+            padding: 25px;
+            border-radius: 15px;
+            margin-top: 20px;
+            position: relative;
+        }
+        .recipe-paper::before {
+            content: "🍽️ Bon Appétit";
+            position: absolute;
+            top: -15px;
+            left: 20px;
+            background: white;
+            padding: 0 10px;
+            color: var(--crust-gold);
+            font-weight: bold;
+            font-family: 'Lobster', cursive;
+            font-size: 1.2em;
+        }
+
+        .internal-badge {
+            background-color: var(--eggplant-dark);
+            color: white;
+            font-size: 0.8em;
+            padding: 5px 12px;
+            border-radius: 50px;
+            opacity: 0.8;
+            letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
 
-<div class="container" style="max-width: 800px;">
+<div class="container main-container">
     
     <div class="text-center mb-5">
         <h1 class="display-4">Chez Macro Chef 🐀</h1>
+        <p class="lead text-muted">Cooking creatively with what you have.</p>
         <span class="internal-badge">INTERNAL TOOL • SECURE</span>
     </div>
 
@@ -55,10 +149,35 @@
             <div class="card p-5">
                 <h3 class="mb-4">What is in the pantry?</h3>
                 <form action="/generate-recipe" method="post">
-                    <textarea class="form-control mb-3" name="ingredients" rows="3" placeholder="e.g. 500g chicken breast..."></textarea>
-                    <button type="submit" class="btn btn-danger w-100 fw-bold">Ask Chef Remy</button>
+                    <div class="mb-4">
+                        <textarea class="form-control form-control-lg" name="ingredients" rows="3" placeholder="e.g. 500g chicken breast, white rice, broccoli, soy sauce..." style="background-color: #f8f9fa; border: 2px solid #eee;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-chef w-100">Ask Chef Remy for Ideas</button>
                 </form>
-                {% if recipe %} <div class="mt-4 border p-3 rounded"> {{ recipe | safe }} </div> {% endif %}
+                
+                {% if recipe %}
+                <div class="recipe-paper">
+                    {{ recipe | safe }}
+
+                    <hr class="my-4" style="border-top: 2px dashed var(--crust-gold);">
+                    
+                    <form action="/email-recipe" method="post" class="mt-3">
+                        <label class="form-label fw-bold small text-muted">Save this recipe?</label>
+                        <input type="hidden" name="recipe_content" value="{{ recipe }}">
+                        
+                        <div class="input-group">
+                            <input type="email" name="user_email" class="form-control" placeholder="Enter your email..." required>
+                            <button class="btn btn-dark" type="submit">📧 Email to Me</button>
+                        </div>
+                    </form>
+                    
+                    {% if email_status %}
+                    <div class="alert alert-info mt-3 py-2 small">
+                        {{ email_status }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -86,6 +205,7 @@
                     <div class="mb-4">
                         <label class="form-label fw-bold">Final Cooked Weight (Total Batch)</label>
                         <input type="number" step="any" name="final_weight" class="form-control" placeholder="e.g. 850 grams" required>
+                        <div class="form-text">Weigh the food after cooking (water evaporates!).</div>
                     </div>
 
                     <button type="submit" class="btn btn-math">Calculate Ratios</button>
@@ -118,6 +238,7 @@
         container.appendChild(newRow);
     }
 </script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
