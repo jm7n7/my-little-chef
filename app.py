@@ -55,32 +55,51 @@ def calculate_macros():
         if not final_weight_str:
             return render_template('index.html', math_result="<div class='alert alert-danger'>Please enter a final weight.</div>", active_tab='math')
             
-        final_weight = float(final_weight_str)
+        try:
+            final_weight = float(final_weight_str)
+        except Exception:
+            return render_template('index.html', math_result="<div class='alert alert-danger'>Invalid final weight. Please enter a number.</div>", active_tab='math')
 
         ingredient_list_str = ", ".join([f"{n}: {w}g" for n, w in zip(names, weights) if n and w])
 
         prompt = f"""
         I have these raw ingredients: {ingredient_list_str}.
-        Task: Estimate the total calories for each specific weight provided.
+        Task: Estimate the total calories of each ingredient for the specific weight provided.
         Return ONLY a JSON object. No markdown.
         Format: {{ "items": [ {{ "name": "Chicken", "cals": 825 }} ], "total_cals": 1525 }}
         """
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp", 
+            model="gemini-2.5-flash", 
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         
         data = json.loads(response.text)
         total_raw_cals = data['total_cals']
+
+        # Ensure total_raw_cals is numeric
+        try:
+            total_raw_cals = float(total_raw_cals)
+        except Exception:
+            return render_template(
+                'index.html', 
+                math_result=f"<div class='alert alert-danger'>Error: Returned calories value is not a number: {total_raw_cals}</div>", 
+                active_tab='math'
+            )
+
         items = data['items']
 
         density = total_raw_cals / final_weight if final_weight > 0 else 0
         
         rows_html = ""
         for item in items:
-            rows_html += f"<tr><td>{item['name']}</td><td>{item['cals']}</td></tr>"
+            # Ensure cals is displayed as number
+            try:
+                cals_val = float(item['cals'])
+            except Exception:
+                cals_val = item['cals']
+            rows_html += f"<tr><td>{item['name']}</td><td>{cals_val}</td></tr>"
 
         result_html = f"""
         <div class="alert alert-success">
