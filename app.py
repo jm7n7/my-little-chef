@@ -24,14 +24,20 @@ def index():
 
 @app.route('/generate-recipe', methods=['POST'])
 def generate_recipe():
-    if not client: return render_template('index.html', recipe="Error: Client not connected", active_tab='chef')
+    if not client: 
+        return render_template('index.html', recipe="Error: Client not connected", active_tab='chef')
     
     ingredients = request.form.get('ingredients')
     prompt = f"""
-    You are a helpful nutrition chef. User ingredients: {ingredients}.
-    Create one creative recipe formatted as clean HTML (using Bootstrap classes).
-    Structure: <h3>Name, <ul> Ingredients, <ol> Steps.
+    You are a helpful nutrition chef. Here are some ingredients the user has in their pantry: {ingredients}
+    
+    Your task: Pick only the ingredients that make sense together to create one creative, delicious recipe. 
+    You do NOT need to use every ingredient—select those that work best as a unified meal.
+    
+    Write the recipe formatted as clean HTML (use Bootstrap classes):
+    Structure: <h3>Name</h3>, <ul>Ingredients</ul>, <ol>Steps</ol>.
     """
+
     try:
         response = client.models.generate_content(model="gemini-2.0-flash-exp", contents=prompt)
         clean_html = response.text.replace("```html", "").replace("```", "")
