@@ -1,24 +1,45 @@
 import os
 import json
 import smtplib
+from functools import wraps
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session, redirect, url_for
 from google import genai
 from google.genai import types
+from authlib.integrations.flask_client import OAuth
 from pydantic import BaseModel, Field
 from typing import List
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-# PROJECT ID is required for Vertex AI (ADC) mode
 PROJECT_ID = "macro-chef-app"
 LOCATION = "us-central1"
 
-# Email Configuration (Set these in Cloud Run Variables later)
+# 1. SECURITY CONFIGURATION
+# Needed for session cookies (Generate a random string for this in env vars)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev_key_only_change_in_prod')
+
+# Access Control List
+# We split the string "user1@gmail.com,user2@gmail.com" into a Python list
+ALLOWED_USERS = os.environ.get('ALLOWED_USERS', '').split(',')
+
+# OAuth Config
+app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID')
+app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET')
+
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+# Email Config (Set these in Cloud Run Variables later)
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL')
 SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD')
+
 
 # Initialize the Client using Vertex AI (Project Credentials)
 try:
@@ -41,16 +62,67 @@ class MacroCalculationResponse(BaseModel):
     items: List[IngredientItem] = Field(description="List of ingredients with their calorie estimates")
     total_cals: float = Field(description="Total calories across all ingredients")
 
+
+# --- HELPER: LOGIN DECORATOR ---
+# This function runs before every route we want to protect
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = session.get('user')
+        
+        # 1. Not logged in? -> Send to Google
+        if not user:
+            return redirect(url_for('login'))
+        
+        # 2. Not on the Guest List? -> 403 Error
+        if user['email'] not in ALLOWED_USERS:
+            return render_template('index.html', 
+                                   recipe=f"<h3 class='text-danger'>⛔ Access Denied</h3><p>User {user['email']} is not authorized.</p>", 
+                                   active_tab='chef')
+        
+        # 3. Allowed? -> Run the actual function
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# --- AUTH ROUTES ---
+
+@app.route('/login')
+def login():
+    # Sends user to Google to sign in
+    redirect_uri = url_for('auth', _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+@app.route('/auth/callback')
+def auth():
+    # Google sends them back here with a token
+    token = google.authorize_access_token()
+    user_info = token.get('userinfo')
+    
+    # Save user info to the session (cookie)
+    session['user'] = user_info
+    return redirect('/')
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
+
+
+# --- APP ROUTES ---
+
 @app.route('/')
+@login_required
 def index():
     # Defaults to the Chef tab
-    return render_template('index.html', active_tab='chef')
+    return render_template('index.html', active_tab='chef', user=session.get('user'))
 
 # --- TAB 1: AI CHEF LOGIC ---
 @app.route('/generate-recipe', methods=['POST'])
+@login_required
 def generate_recipe():
     if not client: 
-        return render_template('index.html', recipe="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='chef')
+        return render_template('index.html', recipe="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='chef', user=session.get('user'))
 
     ingredients = request.form.get('ingredients')
     
@@ -69,7 +141,7 @@ def generate_recipe():
     """
     
     try:
-        # Using 2.0 Flash for speed and creativity
+        # Using 2.5 Flash for speed and creativity
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
@@ -78,19 +150,20 @@ def generate_recipe():
         # Clean up any markdown formatting if the model adds it
         clean_html = response.text.replace("```html", "").replace("```", "")
         
-        return render_template('index.html', recipe=clean_html, active_tab='chef')
+        return render_template('index.html', recipe=clean_html, active_tab='chef', user=session.get('user'))
         
     except Exception as e:
-        return render_template('index.html', recipe=f"<p class='text-danger'>AI Error: {str(e)}</p>", active_tab='chef')
+        return render_template('index.html', recipe=f"<p class='text-danger'>AI Error: {str(e)}</p>", active_tab='chef', user=session.get('user'))
 
 # --- TAB 1 EXTENSION: EMAIL LOGIC ---
 @app.route('/email-recipe', methods=['POST'])
+@login_required
 def email_recipe():
     recipient = request.form.get('user_email')
     recipe_content = request.form.get('recipe_content') # Retreive HTML from hidden field
     
     if not SENDER_EMAIL or not SENDER_PASSWORD:
-        return render_template('index.html', recipe=recipe_content, email_status="⚠️ Server Error: Email credentials not configured.", active_tab='chef')
+        return render_template('index.html', recipe=recipe_content, email_status="⚠️ Server Error: Email credentials not configured.", active_tab='chef', user=session.get('user'))
 
     try:
         # Create the email
@@ -121,17 +194,18 @@ def email_recipe():
         server.send_message(msg)
         server.quit()
 
-        return render_template('index.html', recipe=recipe_content, email_status="✅ Recipe sent successfully!", active_tab='chef')
+        return render_template('index.html', recipe=recipe_content, email_status="✅ Recipe sent successfully!", active_tab='chef', user=session.get('user'))
 
     except Exception as e:
-        return render_template('index.html', recipe=recipe_content, email_status=f"❌ Failed to send: {str(e)}", active_tab='chef')
+        return render_template('index.html', recipe=recipe_content, email_status=f"❌ Failed to send: {str(e)}", active_tab='chef', user=session.get('user'))
 
 # --- TAB 2: MACRO MATH LOGIC ---
 @app.route('/calculate-macros', methods=['POST'])
+@login_required
 def calculate_macros():
     # Force Math tab to stay active
     if not client:
-        return render_template('index.html', math_result="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='math')
+        return render_template('index.html', math_result="<p class='text-danger'>Error: AI Client not connected.</p>", active_tab='math', user=session.get('user'))
 
     try:
         # 1. Get Lists from Form
@@ -140,7 +214,7 @@ def calculate_macros():
         final_weight_str = request.form.get('final_weight')
         
         if not final_weight_str:
-            return render_template('index.html', math_result="<div class='alert alert-danger'>Please enter a final weight.</div>", active_tab='math')
+            return render_template('index.html', math_result="<div class='alert alert-danger'>Please enter a final weight.</div>", active_tab='math', user=session.get('user'))
             
         final_weight = float(final_weight_str)
 
@@ -171,7 +245,7 @@ def calculate_macros():
             )
         )
         
-        # 3. Parse AI Response using Pydantic - .parsed returns validated Pydantic model
+        # 3. Parse AI Response using Pydantic
         if not hasattr(response, 'parsed') or response.parsed is None:
             # Fallback: try to parse manually if .parsed is not available
             if not response.text or response.text.strip() == "":
@@ -225,10 +299,10 @@ def calculate_macros():
         </div>
         """
         
-        return render_template('index.html', math_result=result_html, active_tab='math')
+        return render_template('index.html', math_result=result_html, active_tab='math', user=session.get('user'))
 
     except Exception as e:
-        return render_template('index.html', math_result=f"<div class='alert alert-danger'>Error: {str(e)}</div>", active_tab='math')
+        return render_template('index.html', math_result=f"<div class='alert alert-danger'>Error: {str(e)}</div>", active_tab='math', user=session.get('user'))
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
